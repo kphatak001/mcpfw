@@ -124,6 +124,18 @@ Every tool call is logged as JSON-lines:
 {"event":"tool_call","tool":"write_file","arguments":{"path":"~/.ssh/key"},"decision":"deny","rule":"block_sensitive","message":"Write to sensitive path blocked","timestamp":1713700000}
 ```
 
+## Pair with agentspec
+
+[agentspec](https://github.com/kphatak001/agentspec) scans your agent config and generates mcpfw policies automatically:
+
+```bash
+# Scan agent config → generate enforcement policy
+agentspec model agent.yaml --emit-policy -o policy.yaml
+
+# Enforce at runtime
+mcpfw --policy policy.yaml -- npx @modelcontextprotocol/server-filesystem .
+```
+
 ## License
 
 MIT
