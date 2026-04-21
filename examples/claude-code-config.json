@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "filesystem": {
+      "command": "mcpfw",
+      "args": ["--policy", "~/.mcpfw/standard.yaml", "--audit-log", "~/.mcpfw/audit.jsonl",
+               "--", "npx", "-y", "@modelcontextprotocol/server-filesystem", "/home/user/project"]
+    },
+    "github": {
+      "command": "mcpfw",
+      "args": ["--policy", "~/.mcpfw/paranoid.yaml", "--audit-log", "~/.mcpfw/audit.jsonl",
+               "--", "npx", "-y", "@modelcontextprotocol/server-github"],
+      "env": {
+        "GITHUB_TOKEN": "$GITHUB_TOKEN"
+      }
+    }
+  }
+}

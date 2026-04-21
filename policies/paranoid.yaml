@@ -1,0 +1,34 @@
+name: paranoid
+# Ask for everything except reads. Maximum human oversight.
+
+rules:
+  - name: block_sensitive
+    action: deny
+    tools: ["*"]
+    when:
+      arg_matches:
+        path: ["~/.ssh/**", "~/.aws/**", "/etc/**", "**/.env*"]
+    message: "Access to sensitive path blocked"
+
+  - name: block_dangerous_commands
+    action: deny
+    tools: ["run_command", "execute_command", "bash", "shell"]
+    when:
+      arg_contains:
+        command: ["rm -rf", "curl | bash", "wget | sh", "> /dev/", "chmod 777"]
+    message: "Dangerous command blocked"
+
+  - name: allow_reads
+    action: allow
+    tools: ["read_file", "list_directory", "search_files", "get_file_info",
+            "list_allowed_directories", "grep", "find"]
+
+  - name: rate_limit
+    action: rate_limit
+    tools: ["*"]
+    rate: 30/minute
+
+  - name: ask_everything
+    action: ask
+    tools: ["*"]
+    message: "All non-read operations require approval"

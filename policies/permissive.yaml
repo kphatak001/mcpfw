@@ -1,0 +1,12 @@
+name: permissive
+# Log everything, block nothing. Good for auditing before writing real policies.
+
+rules:
+  - name: rate_limit
+    action: rate_limit
+    tools: ["*"]
+    rate: 120/minute
+
+  - name: allow_all
+    action: allow
+    tools: ["*"]

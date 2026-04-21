@@ -1,0 +1,52 @@
+name: standard
+# Block sensitive paths, allow reads, ask for unscoped writes
+
+rules:
+  # Block writes to sensitive locations — unconditional
+  - name: block_sensitive_paths
+    action: deny
+    tools: ["write_file", "edit_file", "create_file", "str_replace_editor"]
+    when:
+      arg_matches:
+        path: ["~/.ssh/**", "~/.bashrc", "~/.bash_profile", "~/.profile", "~/.zshrc",
+               "~/.gitconfig", "~/.aws/**", "~/.config/**", "/etc/**", "**/.env*",
+               "**/id_rsa*", "**/id_ed25519*", "**/.git/hooks/**"]
+    message: "Write to sensitive path blocked"
+
+  # Block dangerous shell commands
+  - name: block_dangerous_commands
+    action: deny
+    tools: ["run_command", "execute_command", "bash", "shell"]
+    when:
+      arg_matches:
+        command: ["*rm -rf /*", "*> /dev/sd*", "*mkfs*", "*dd if=*of=/dev/*",
+                  "*chmod 777*", "*curl*|*bash*", "*wget*|*sh*", "*nc -e*",
+                  "*reverse_shell*", "*eval(*base64*"]
+    message: "Dangerous command pattern blocked"
+
+  # Allow all read operations
+  - name: allow_reads
+    action: allow
+    tools: ["read_file", "list_directory", "search_files", "get_file_info",
+            "list_allowed_directories", "read_resource", "grep", "find"]
+
+  # Allow writes within project directories
+  - name: allow_project_writes
+    action: allow
+    tools: ["write_file", "edit_file", "create_file", "str_replace_editor"]
+    when:
+      arg_matches:
+        path: ["./src/**", "./tests/**", "./docs/**", "./lib/**", "./*.md",
+               "./*.json", "./*.yaml", "./*.yml", "./*.toml", "./*.txt"]
+
+  # Rate limit all tool calls
+  - name: global_rate_limit
+    action: rate_limit
+    tools: ["*"]
+    rate: 60/minute
+
+  # Everything else — ask human
+  - name: ask_default
+    action: ask
+    tools: ["*"]
+    message: "Unrecognized tool call requires approval"
