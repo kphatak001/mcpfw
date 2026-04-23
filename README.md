@@ -105,6 +105,29 @@ when:
 | `standard.yaml` | Block sensitive paths, allow reads, ask for unscoped writes |
 | `paranoid.yaml` | Ask for everything except reads |
 
+## Demo
+
+Try it without any external MCP server — a mock server and test calls are included.
+
+**Quick (single terminal):**
+
+```bash
+python3 tests/send_calls.py | mcpfw -p policies/standard.yaml -- python3 tests/mock_server.py
+```
+
+**Interactive (two terminals):**
+
+```bash
+# Terminal 1 — start mcpfw with mock server
+mkfifo /tmp/mcpfw-demo
+mcpfw -p policies/standard.yaml -l audit.jsonl -- python3 tests/mock_server.py < /tmp/mcpfw-demo
+
+# Terminal 2 — send calls one at a time, press Enter between each
+python3 tests/interactive_demo.py > /tmp/mcpfw-demo
+```
+
+Sends 6 tool calls that exercise every decision type: allow, deny, and the interactive `🔒 Allow? [y/N]` prompt.
+
 ## CLI Options
 
 ```
