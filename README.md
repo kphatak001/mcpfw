@@ -159,6 +159,14 @@ agentspec model agent.yaml --emit-policy -o policy.yaml
 mcpfw --policy policy.yaml -- npx @modelcontextprotocol/server-filesystem .
 ```
 
+## Pair with findingfold
+
+[findingfold](https://github.com/kphatak001/findingfold) is an MCP server that collapses security findings by root cause. Wrap it with mcpfw to enforce policies on which findings data the agent can access:
+
+```bash
+mcpfw --policy policy.yaml -- findingfold-mcp
+```
+
 ## License
 
 MIT
