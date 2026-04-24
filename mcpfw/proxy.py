@@ -9,9 +9,15 @@ from typing import Any
 from .policy import Policy, Decision
 from .audit import AuditLog
 from .session import Session
+from .rules.response_scanner import ResponseScanner
 
 
-async def run_proxy(command: list[str], policy: Policy, audit: AuditLog) -> int:
+async def run_proxy(
+    command: list[str],
+    policy: Policy,
+    audit: AuditLog,
+    scanner: ResponseScanner | None = None,
+) -> int:
     session = Session()
 
     proc = await asyncio.create_subprocess_exec(
@@ -29,6 +35,9 @@ async def run_proxy(command: list[str], policy: Policy, audit: AuditLog) -> int:
         asyncio.BaseProtocol, sys.stdout.buffer
     )
     stdout_writer = writer_transport
+
+    # Track pending tool call IDs so we know which responses to scan
+    pending_tool_calls: set[Any] = set()
 
     async def agent_to_server():
         """Read from agent (stdin), evaluate policy, forward or block."""
@@ -69,6 +78,10 @@ async def run_proxy(command: list[str], policy: Policy, audit: AuditLog) -> int:
                             stdout_writer.write(json.dumps(resp).encode() + b"\n")
                             continue
                         audit.log_human_decision(msg, True)
+
+                    # Track this request ID so we can scan the response
+                    if scanner and msg.get("id") is not None:
+                        pending_tool_calls.add(msg["id"])
                 else:
                     audit.log_passthrough(msg)
 
@@ -76,11 +89,17 @@ async def run_proxy(command: list[str], policy: Policy, audit: AuditLog) -> int:
                 await proc.stdin.drain()
 
     async def server_to_agent():
-        """Read from MCP server (child stdout), forward to agent."""
+        """Read from MCP server (child stdout), scan responses, forward to agent."""
         while True:
             line = await proc.stdout.readline()
             if not line:
                 return
+
+            if scanner:
+                line = _maybe_scan_response(line, scanner, pending_tool_calls, audit, stdout_writer)
+                if line is None:
+                    continue  # response was blocked
+
             stdout_writer.write(line)
 
     try:
@@ -93,6 +112,64 @@ async def run_proxy(command: list[str], policy: Policy, audit: AuditLog) -> int:
             await proc.wait()
 
     return proc.returncode or 0
+
+
+def _maybe_scan_response(
+    line: bytes,
+    scanner: ResponseScanner,
+    pending: set,
+    audit: AuditLog,
+    stdout_writer,
+) -> bytes | None:
+    """Scan a server response for injection. Returns line to forward, or None if blocked."""
+    try:
+        msg = json.loads(line)
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return line  # not JSON, pass through
+
+    msg_id = msg.get("id")
+    if msg_id not in pending:
+        return line  # not a tool call response
+
+    pending.discard(msg_id)
+
+    # Extract text content from the result
+    text = _extract_response_text(msg)
+    if not text:
+        return line
+
+    matched = scanner.scan(text)
+    if matched:
+        audit.log_response_blocked(msg_id, matched)
+        # Replace with a sanitized error so the agent knows something was wrong
+        sanitized = {
+            "jsonrpc": "2.0",
+            "id": msg_id,
+            "error": {
+                "code": -32600,
+                "message": "BLOCKED by mcpfw: server response contained suspected prompt injection",
+            },
+        }
+        stdout_writer.write(json.dumps(sanitized).encode() + b"\n")
+        return None
+
+    return line
+
+
+def _extract_response_text(msg: dict) -> str:
+    """Pull text from MCP tool result (handles content array and plain text)."""
+    result = msg.get("result")
+    if not result:
+        return ""
+    # MCP tool results have content: [{type: "text", text: "..."}]
+    content = result.get("content") if isinstance(result, dict) else None
+    if isinstance(content, list):
+        parts = [c.get("text", "") for c in content if isinstance(c, dict)]
+        return " ".join(parts)
+    if isinstance(result, dict) and "text" in result:
+        return str(result["text"])
+    # Fallback: stringify the whole result
+    return json.dumps(result) if result else ""
 
 
 def _error_response(request: dict, message: str) -> dict:
@@ -111,7 +188,6 @@ async def _prompt_human(params: dict) -> bool:
     args = params.get("arguments", {})
     args_str = json.dumps(args, indent=2) if args else "{}"
 
-    # Write prompt to stderr so it doesn't interfere with JSON-RPC on stdout
     sys.stderr.write(f"\n{'='*60}\n")
     sys.stderr.write(f"🔒 mcpfw: Tool call requires approval\n")
     sys.stderr.write(f"   Tool: {tool}\n")

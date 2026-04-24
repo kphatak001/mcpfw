@@ -30,6 +30,14 @@ class AuditLog:
             "approved": approved,
         })
 
+    def log_response_blocked(self, request_id, pattern: str) -> None:
+        self._write({
+            "event": "response_blocked",
+            "request_id": request_id,
+            "pattern": pattern,
+            "message": "Server response contained suspected prompt injection",
+        })
+
     def log_passthrough(self, message: dict) -> None:
         method = message.get("method", "")
         if method:  # only log methods, not responses

@@ -1,7 +1,35 @@
 name: paranoid
 # Ask for everything except reads. Maximum human oversight.
+# Tight session budgets, aggressive sequence detection, response scanning.
+
+scan_responses:
+  enabled: true
 
 rules:
+  # ── Tight session budgets ──
+  - name: session_budget
+    action: budget
+    max_calls: 100
+    max_per_tool: 20
+    message: "Session budget exceeded (paranoid policy)"
+
+  # ── Sequence detection ──
+  - name: exfil_read_then_network
+    action: sequence
+    pattern: ["read_file:*", "run_command:*curl*"]
+    message: "Blocked: any file read followed by network call"
+
+  - name: exfil_read_then_exec
+    action: sequence
+    pattern: ["read_file:*.env*", "*"]
+    message: "Blocked: .env read followed by any tool call"
+
+  - name: exfil_secrets_any
+    action: sequence
+    pattern: ["read_file:*secret*", "*"]
+    message: "Blocked: secrets read followed by any tool call"
+
+  # ── Argument-level rules ──
   - name: block_sensitive
     action: deny
     tools: ["*"]

@@ -1,8 +1,38 @@
 name: standard
-# Block sensitive paths, allow reads, ask for unscoped writes
+# Block sensitive paths, allow reads, ask for unscoped writes.
+# Includes session budgets, exfiltration sequence detection, and response scanning.
+
+# Scan MCP server responses for prompt injection before forwarding to agent
+scan_responses:
+  enabled: true
 
 rules:
-  # Block writes to sensitive locations — unconditional
+  # ── Session budgets (resource amplification defense) ──
+  - name: session_budget
+    action: budget
+    max_calls: 200
+    max_per_tool: 50
+    message: "Session call budget exceeded"
+
+  # ── Sequence detection (exfiltration defense) ──
+  - name: exfil_env_curl
+    action: sequence
+    pattern: ["read_file:*.env*", "run_command:*curl*"]
+    message: "Blocked: read sensitive file then network call (possible exfiltration)"
+
+  - name: exfil_secrets_network
+    action: sequence
+    pattern: ["read_file:*secret*", "run_command:*"]
+    message: "Blocked: read secrets then execute command"
+
+  - name: exfil_ssh_network
+    action: sequence
+    pattern: ["read_file:*id_rsa*", "run_command:*"]
+    message: "Blocked: read SSH key then execute command"
+
+  # ── Argument-level rules ──
+
+  # Block writes to sensitive locations
   - name: block_sensitive_paths
     action: deny
     tools: ["write_file", "edit_file", "create_file", "str_replace_editor"]

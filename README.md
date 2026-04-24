@@ -40,7 +40,25 @@ Works with Claude Code, Kiro, Cline, or any MCP client. Zero client changes.
 
 ```yaml
 name: standard
+
+# Scan MCP server responses for prompt injection
+scan_responses:
+  enabled: true
+
 rules:
+  # Session-wide call budget (prevents resource amplification)
+  - name: session_budget
+    action: budget
+    max_calls: 200
+    max_per_tool: 50
+    message: "Session call budget exceeded"
+
+  # Detect exfiltration sequences (read secrets → network call)
+  - name: exfil_env_curl
+    action: sequence
+    pattern: ["read_file:*.env*", "run_command:*curl*"]
+    message: "Blocked: read sensitive file then network call"
+
   # Block writes to sensitive paths
   - action: deny
     tools: ["write_file", "edit_file"]
@@ -79,6 +97,8 @@ rules:
 | `deny` | Return error to agent, never reaches server |
 | `ask` | Pause, prompt human in terminal, wait for y/n |
 | `rate_limit` | Token bucket — deny if exceeded, otherwise fall through |
+| `budget` | Session-wide call caps — total and per-tool |
+| `sequence` | Detect suspicious multi-call patterns across session history |
 
 ## Argument Matching
 
@@ -97,13 +117,61 @@ when:
     command: "curl.*\\|.*bash"
 ```
 
+## Response Scanning
+
+MCP server responses are scanned for prompt injection before reaching the agent. A compromised or malicious MCP server can embed instructions like "ignore previous instructions" in tool output — mcpfw catches these and returns a sanitized error instead.
+
+Enable in your policy:
+
+```yaml
+scan_responses:
+  enabled: true
+  extra_patterns:          # optional — add your own regex
+    - "CUSTOM_MARKER"
+```
+
+Default patterns detect common injection vectors: `ignore previous instructions`, `<system>` tags, `[INST]` markers, and similar.
+
+Based on: [VIGIL: Verify-Before-Commit](https://arxiv.org/abs/2604.xxxxx), [MCP-ITP: Implicit Tool Poisoning](https://arxiv.org/abs/2604.xxxxx)
+
+## Session Budgets
+
+Cap total tool calls per session and per-tool to prevent resource amplification attacks where a malicious MCP server triggers recursive tool chains that inflate costs.
+
+```yaml
+- name: session_budget
+  action: budget
+  max_calls: 200       # total calls across all tools
+  max_per_tool: 50     # per individual tool
+  message: "Session budget exceeded"
+```
+
+Per-tool limits only block the specific tool that exceeded its budget — other tools remain available.
+
+Based on: [Beyond Max Tokens: Stealthy Resource Amplification via Tool Calling Chains](https://arxiv.org/abs/2604.xxxxx)
+
+## Sequence Detection
+
+Detect multi-step attack patterns across session history. Catches exfiltration sequences like "read .env file, then curl to external server."
+
+```yaml
+- name: exfil_env_curl
+  action: sequence
+  pattern: ["read_file:*.env*", "run_command:*curl*"]
+  message: "Blocked: read sensitive file then network call"
+```
+
+Steps use `tool_name:arg_glob` syntax. The engine walks session history backwards to find preceding steps. Only fires when all steps match in order.
+
+Based on: [Taming Privilege Escalation in LLM Agent Systems](https://arxiv.org/abs/2604.xxxxx), [AgentGuardian: Learning Access Control Policies](https://arxiv.org/abs/2604.xxxxx)
+
 ## Bundled Policies
 
 | Policy | Description |
 |--------|-------------|
 | `permissive.yaml` | Log everything, block nothing |
-| `standard.yaml` | Block sensitive paths, allow reads, ask for unscoped writes |
-| `paranoid.yaml` | Ask for everything except reads |
+| `standard.yaml` | Block sensitive paths, allow reads, ask for unscoped writes, session budgets, exfiltration detection, response scanning |
+| `paranoid.yaml` | Ask for everything except reads, tight budgets, aggressive sequence detection, response scanning |
 
 ## Demo
 
@@ -145,6 +213,12 @@ Every tool call is logged as JSON-lines:
 
 ```json
 {"event":"tool_call","tool":"write_file","arguments":{"path":"~/.ssh/key"},"decision":"deny","rule":"block_sensitive","message":"Write to sensitive path blocked","timestamp":1713700000}
+```
+
+Blocked responses are also logged:
+
+```json
+{"event":"response_blocked","request_id":3,"pattern":"(?i)ignore\\s+(all\\s+)?previous\\s+instructions","message":"Server response contained suspected prompt injection","timestamp":1713700001}
 ```
 
 ## Pair with agentspec
