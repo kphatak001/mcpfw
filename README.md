@@ -169,4 +169,4 @@ mcpfw --policy policy.yaml -- findingfold-mcp
 
 ## License
 
-MIT
+Apache-2.0 — see [LICENSE](LICENSE).
