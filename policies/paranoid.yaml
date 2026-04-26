@@ -2,6 +2,8 @@ name: paranoid
 # Ask for everything except reads. Maximum human oversight.
 # Tight session budgets, aggressive sequence detection, response scanning.
 
+default_action: deny
+
 scan_responses:
   enabled: true
 

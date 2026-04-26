@@ -354,6 +354,42 @@ class TestSequenceDetection(unittest.TestCase):
         self.assertEqual(d.action, "allow")
 
 
+# ── Default Action ────────────────────────────────────────
+
+
+class TestDefaultAction(unittest.TestCase):
+    def _policy(self, rules, default_action="allow"):
+        return Policy(name="test", rules=[Rule(**r) for r in rules], default_action=default_action)
+
+    def test_default_allow(self):
+        p = self._policy([])
+        d = p.evaluate({"name": "anything", "arguments": {}})
+        self.assertEqual(d.action, "allow")
+
+    def test_default_deny(self):
+        p = self._policy([], default_action="deny")
+        d = p.evaluate({"name": "anything", "arguments": {}})
+        self.assertEqual(d.action, "deny")
+
+    def test_default_ask(self):
+        p = self._policy([], default_action="ask")
+        d = p.evaluate({"name": "anything", "arguments": {}})
+        self.assertEqual(d.action, "ask")
+
+    def test_explicit_allow_overrides_default_deny(self):
+        p = self._policy([{"action": "allow", "tools": ["read_file"]}], default_action="deny")
+        self.assertEqual(p.evaluate({"name": "read_file", "arguments": {}}).action, "allow")
+        self.assertEqual(p.evaluate({"name": "write_file", "arguments": {}}).action, "deny")
+
+    def test_paranoid_policy_has_default_deny(self):
+        p = load_policy(os.path.join(os.path.dirname(__file__), "..", "policies", "paranoid.yaml"))
+        self.assertEqual(p.default_action, "deny")
+
+    def test_standard_policy_defaults_to_allow(self):
+        p = load_policy(os.path.join(os.path.dirname(__file__), "..", "policies", "standard.yaml"))
+        self.assertEqual(p.default_action, "allow")
+
+
 # ── Discovery Filtering ──────────────────────────────────
 
 

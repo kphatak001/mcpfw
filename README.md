@@ -100,6 +100,28 @@ rules:
 | `budget` | Session-wide call caps — total and per-tool |
 | `sequence` | Detect suspicious multi-call patterns across session history |
 
+## Default Action
+
+By default, mcpfw allows tool calls that don't match any rule. Set `default_action` to change this:
+
+```yaml
+name: locked-down
+default_action: deny   # or "ask"
+
+rules:
+  - action: allow
+    tools: ["read_file", "list_directory"]
+  # everything else is denied — fail closed
+```
+
+| Value | Behavior |
+|-------|----------|
+| `allow` | (default) Unmatched calls pass through |
+| `deny` | Unmatched calls are blocked |
+| `ask` | Unmatched calls require human approval |
+
+The bundled `paranoid.yaml` uses `default_action: deny`.
+
 ## Argument Matching
 
 ```yaml

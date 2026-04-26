@@ -38,6 +38,7 @@ class Policy:
     name: str
     rules: list[Rule]
     scan_responses: dict = field(default_factory=dict)
+    default_action: str = "allow"  # "allow", "deny", or "ask"
     _rate_limiters: dict[str, RateLimiter] = field(default_factory=dict, repr=False)
 
     def filter_tools(self, tools: list[dict]) -> tuple[list[dict], list[str]]:
@@ -88,7 +89,7 @@ class Policy:
 
             return Decision(rule.action, rule.name, rule.message)
 
-        return Decision("allow", "_default", "No matching rule — default allow")
+        return Decision(self.default_action, "_default", "No matching rule — default " + self.default_action)
 
 
 def _check_budget(rule: Rule, session, current_tool: str = "") -> Decision | None:
@@ -167,6 +168,7 @@ def load_policy(path: str) -> Policy:
         name=data.get("name", "unnamed"),
         rules=rules,
         scan_responses=data.get("scan_responses", {}),
+        default_action=data.get("default_action", "allow"),
     )
 
 
