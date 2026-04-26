@@ -38,6 +38,14 @@ class AuditLog:
             "message": "Server response contained suspected prompt injection",
         })
 
+    def log_discovery_filtered(self, hidden_tools: list[str]) -> None:
+        self._write({
+            "event": "discovery_filtered",
+            "hidden_tools": hidden_tools,
+            "count": len(hidden_tools),
+            "message": f"Stripped {len(hidden_tools)} tool(s) from discovery response",
+        })
+
     def log_passthrough(self, message: dict) -> None:
         method = message.get("method", "")
         if method:  # only log methods, not responses

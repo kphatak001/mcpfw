@@ -134,6 +134,28 @@ Default patterns detect common injection vectors: `ignore previous instructions`
 
 Based on: [VIGIL: Verify-Before-Commit](https://arxiv.org/abs/2604.xxxxx), [MCP-ITP: Implicit Tool Poisoning](https://arxiv.org/abs/2604.xxxxx)
 
+## Discovery Filtering
+
+When an agent sends `tools/list`, mcpfw intercepts the response and strips out any tool that the policy would deny. The agent never sees denied tools — fewer tokens in context, no hallucinated calls to blocked tools, no wasted round-trips.
+
+This happens automatically based on your existing deny rules. A tool is hidden when `evaluate` with empty arguments yields `deny`. Tools with argument-conditional deny rules (e.g. "deny write_file only to ~/.ssh") are **not** hidden — they might be allowed with different arguments.
+
+```
+MCP Server responds: 27 tools
+                        │
+                   mcpfw filters
+                        │
+Agent receives:    10 tools (denied tools invisible)
+```
+
+Filtered tools are logged to the audit trail:
+
+```json
+{"event":"discovery_filtered","hidden_tools":["issue_refund","cancel_subscription","deactivate_customer"],"count":3,"message":"Stripped 3 tool(s) from discovery response"}
+```
+
+No policy changes needed — if you already have deny rules, discovery filtering works out of the box.
+
 ## Session Budgets
 
 Cap total tool calls per session and per-tool to prevent resource amplification attacks where a malicious MCP server triggers recursive tool chains that inflate costs.

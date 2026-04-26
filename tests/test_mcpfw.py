@@ -354,6 +354,128 @@ class TestSequenceDetection(unittest.TestCase):
         self.assertEqual(d.action, "allow")
 
 
+# ── Discovery Filtering ──────────────────────────────────
+
+
+class TestDiscoveryFiltering(unittest.TestCase):
+    def _policy(self, rules):
+        return Policy(name="test", rules=[Rule(**r) for r in rules])
+
+    def test_filter_hides_denied_tools(self):
+        p = self._policy([
+            {"action": "deny", "tools": ["dangerous_tool"], "message": "blocked"},
+            {"action": "allow", "tools": ["*"]},
+        ])
+        tools = [
+            {"name": "safe_tool", "description": "ok"},
+            {"name": "dangerous_tool", "description": "bad"},
+            {"name": "another_safe", "description": "ok"},
+        ]
+        visible, hidden = p.filter_tools(tools)
+        self.assertEqual([t["name"] for t in visible], ["safe_tool", "another_safe"])
+        self.assertEqual(hidden, ["dangerous_tool"])
+
+    def test_filter_keeps_all_when_none_denied(self):
+        p = self._policy([{"action": "allow", "tools": ["*"]}])
+        tools = [{"name": "a"}, {"name": "b"}]
+        visible, hidden = p.filter_tools(tools)
+        self.assertEqual(len(visible), 2)
+        self.assertEqual(hidden, [])
+
+    def test_filter_conditional_deny_not_hidden(self):
+        """Tools with arg-conditional deny rules should NOT be hidden —
+        they might be allowed with different arguments."""
+        p = self._policy([
+            {"action": "deny", "tools": ["write_file"],
+             "when": {"arg_matches": {"path": ["~/.ssh/**"]}}},
+            {"action": "allow", "tools": ["*"]},
+        ])
+        tools = [{"name": "write_file"}, {"name": "read_file"}]
+        visible, hidden = p.filter_tools(tools)
+        # write_file evaluated with empty args → when doesn't match → falls through to allow
+        self.assertEqual(len(visible), 2)
+        self.assertEqual(hidden, [])
+
+    def test_filter_glob_deny_hides_matching(self):
+        p = self._policy([
+            {"action": "deny", "tools": ["delete_*"]},
+            {"action": "allow", "tools": ["*"]},
+        ])
+        tools = [{"name": "delete_user"}, {"name": "delete_file"}, {"name": "read_file"}]
+        visible, hidden = p.filter_tools(tools)
+        self.assertEqual([t["name"] for t in visible], ["read_file"])
+        self.assertIn("delete_user", hidden)
+        self.assertIn("delete_file", hidden)
+
+    def test_filter_with_standard_policy(self):
+        p = load_policy(os.path.join(os.path.dirname(__file__), "..", "policies", "standard.yaml"))
+        tools = [
+            {"name": "read_file"},
+            {"name": "write_file"},
+            {"name": "run_command"},
+        ]
+        visible, hidden = p.filter_tools(tools)
+        # read_file is explicitly allowed, write_file/run_command evaluated with empty args
+        visible_names = [t["name"] for t in visible]
+        self.assertIn("read_file", visible_names)
+
+
+class TestProxyToolsListFiltering(unittest.TestCase):
+    """Test the _maybe_filter_tools_list helper directly."""
+
+    def test_filters_tools_list_response(self):
+        from mcpfw.proxy import _maybe_filter_tools_list
+
+        policy = Policy(name="test", rules=[
+            Rule(action="deny", tools=["bad_tool"]),
+            Rule(action="allow", tools=["*"]),
+        ])
+        audit = AuditLog()  # no file
+
+        msg = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": {
+                "tools": [
+                    {"name": "good_tool", "description": "ok"},
+                    {"name": "bad_tool", "description": "nope"},
+                ]
+            }
+        }
+        pending = {1}
+        line = json.dumps(msg).encode() + b"\n"
+
+        result = _maybe_filter_tools_list(line, policy, pending, audit)
+        parsed = json.loads(result)
+        tool_names = [t["name"] for t in parsed["result"]["tools"]]
+        self.assertEqual(tool_names, ["good_tool"])
+        self.assertEqual(pending, set())  # consumed
+
+    def test_passes_through_non_tools_list(self):
+        from mcpfw.proxy import _maybe_filter_tools_list
+
+        policy = Policy(name="test", rules=[])
+        audit = AuditLog()
+        pending = set()
+
+        line = json.dumps({"jsonrpc": "2.0", "id": 5, "result": {}}).encode() + b"\n"
+        result = _maybe_filter_tools_list(line, policy, pending, audit)
+        self.assertEqual(result, line)  # unchanged
+
+    def test_passes_through_when_nothing_hidden(self):
+        from mcpfw.proxy import _maybe_filter_tools_list
+
+        policy = Policy(name="test", rules=[Rule(action="allow", tools=["*"])])
+        audit = AuditLog()
+
+        msg = {"jsonrpc": "2.0", "id": 2, "result": {"tools": [{"name": "a"}]}}
+        pending = {2}
+        line = json.dumps(msg).encode() + b"\n"
+
+        result = _maybe_filter_tools_list(line, policy, pending, audit)
+        self.assertEqual(result, line)  # no modification when nothing hidden
+
+
 # ── Policy loading with new fields ──────────────────────
 
 

@@ -36,8 +36,9 @@ async def run_proxy(
     )
     stdout_writer = writer_transport
 
-    # Track pending tool call IDs so we know which responses to scan
+    # Track pending request IDs for response interception
     pending_tool_calls: set[Any] = set()
+    pending_tools_list: set[Any] = set()
 
     async def agent_to_server():
         """Read from agent (stdin), evaluate policy, forward or block."""
@@ -83,17 +84,23 @@ async def run_proxy(
                     if scanner and msg.get("id") is not None:
                         pending_tool_calls.add(msg["id"])
                 else:
+                    # Track tools/list requests for discovery filtering
+                    if msg.get("method") == "tools/list" and msg.get("id") is not None:
+                        pending_tools_list.add(msg["id"])
                     audit.log_passthrough(msg)
 
                 proc.stdin.write(json.dumps(msg).encode() + b"\n")
                 await proc.stdin.drain()
 
     async def server_to_agent():
-        """Read from MCP server (child stdout), scan responses, forward to agent."""
+        """Read from MCP server (child stdout), filter discovery, scan responses, forward to agent."""
         while True:
             line = await proc.stdout.readline()
             if not line:
                 return
+
+            # Filter tools/list responses — strip tools the policy would deny
+            line = _maybe_filter_tools_list(line, policy, pending_tools_list, audit)
 
             if scanner:
                 line = _maybe_scan_response(line, scanner, pending_tool_calls, audit, stdout_writer)
@@ -112,6 +119,37 @@ async def run_proxy(
             await proc.wait()
 
     return proc.returncode or 0
+
+
+def _maybe_filter_tools_list(
+    line: bytes,
+    policy: Policy,
+    pending: set,
+    audit: AuditLog,
+) -> bytes:
+    """Strip denied tools from tools/list responses so the agent never sees them."""
+    try:
+        msg = json.loads(line)
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return line
+
+    msg_id = msg.get("id")
+    if msg_id not in pending:
+        return line
+
+    pending.discard(msg_id)
+
+    tools = msg.get("result", {}).get("tools") if isinstance(msg.get("result"), dict) else None
+    if not isinstance(tools, list):
+        return line
+
+    visible, hidden = policy.filter_tools(tools)
+    if hidden:
+        msg["result"]["tools"] = visible
+        audit.log_discovery_filtered(hidden)
+        return json.dumps(msg).encode() + b"\n"
+
+    return line
 
 
 def _maybe_scan_response(

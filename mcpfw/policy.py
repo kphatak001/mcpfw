@@ -40,6 +40,22 @@ class Policy:
     scan_responses: dict = field(default_factory=dict)
     _rate_limiters: dict[str, RateLimiter] = field(default_factory=dict, repr=False)
 
+    def filter_tools(self, tools: list[dict]) -> tuple[list[dict], list[str]]:
+        """Filter a tools/list response, removing tools the agent should never see.
+
+        Returns (visible_tools, hidden_names).  A tool is hidden when
+        ``evaluate`` with empty arguments yields ``deny``.
+        """
+        visible, hidden = [], []
+        for tool in tools:
+            name = tool.get("name", "")
+            decision = self.evaluate({"name": name, "arguments": {}})
+            if decision.action == "deny":
+                hidden.append(name)
+            else:
+                visible.append(tool)
+        return visible, hidden
+
     def evaluate(self, params: dict, session: Any = None) -> Decision:
         tool_name = params.get("name", "")
         arguments = params.get("arguments", {})
