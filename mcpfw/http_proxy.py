@@ -3,8 +3,12 @@
 Runs as an HTTP server that accepts MCP-over-HTTP requests (JSON-RPC POST),
 applies the same policy engine as stdio mode, and proxies to a remote MCP server.
 
+When --envelope is provided, also applies session-level behavioral enforcement
+via agent-envelope (cross-action data flow, workflow matching, drift scoring, kill switch).
+
 Usage:
     mcpfw --listen :8443 --target https://mcp-server:3000 --policy policy.yaml
+    mcpfw --listen :8443 --target https://mcp-server:3000 --policy policy.yaml --envelope envelope.yaml
 """
 
 from __future__ import annotations
@@ -19,20 +23,41 @@ from .audit import AuditLog
 from .session import Session
 from .rules.response_scanner import ResponseScanner
 
+# Optional agent-envelope integration
+try:
+    from agent_envelope import EnvelopeSession, load_envelope
+    from agent_envelope.scoring import Decision as EnvDecision
+    HAS_ENVELOPE = True
+except ImportError:
+    HAS_ENVELOPE = False
+
 
 class HttpProxy:
     def __init__(self, target: str, policy: Policy, audit: AuditLog,
-                 scanner: ResponseScanner | None = None):
+                 scanner: ResponseScanner | None = None,
+                 envelope_path: str | None = None):
         self.target = target.rstrip("/")
         self.policy = policy
         self.audit = audit
         self.scanner = scanner
         self.sessions: dict[str, Session] = {}  # keyed by agent identity
+        self.envelope_path = envelope_path
+        self.envelope_sessions: dict[str, "EnvelopeSession"] = {}
 
     def _get_session(self, agent_id: str) -> Session:
         if agent_id not in self.sessions:
             self.sessions[agent_id] = Session()
         return self.sessions[agent_id]
+
+    def _get_envelope_session(self, agent_id: str) -> "EnvelopeSession | None":
+        if not self.envelope_path or not HAS_ENVELOPE:
+            return None
+        if agent_id not in self.envelope_sessions:
+            env = load_envelope(self.envelope_path)
+            session = EnvelopeSession(env)
+            session.__enter__()
+            self.envelope_sessions[agent_id] = session
+        return self.envelope_sessions[agent_id]
 
     async def handle_request(self, reader: asyncio.StreamReader,
                              writer: asyncio.StreamWriter):
@@ -76,6 +101,8 @@ class HttpProxy:
 
         if msg.get("method") == "tools/call":
             params = msg.get("params", {})
+
+            # Layer 3: Per-call policy (stateless)
             decision = self.policy.evaluate(params, session)
             session.record_call(params, decision)
             self.audit.log_call(msg, decision)
@@ -87,6 +114,30 @@ class HttpProxy:
                     "error": {"code": -32600,
                               "message": f"BLOCKED by mcpfw: {decision.message}"}
                 }).encode()
+
+            # Layer 2: Session-level envelope (stateful)
+            env_session = self._get_envelope_session(agent_id)
+            if env_session:
+                tool_name = params.get("name", "")
+                arguments = params.get("arguments", {})
+                # Extract data flow hints from arguments if present
+                data_read = arguments.pop("__data_read", None) if isinstance(arguments, dict) else None
+                data_write = arguments.pop("__data_write", None) if isinstance(arguments, dict) else None
+
+                env_result = env_session.check(
+                    tool_name, arguments,
+                    data_read=data_read if isinstance(data_read, list) else [],
+                    data_write=data_write if isinstance(data_write, list) else [],
+                )
+
+                if env_result.should_block:
+                    violation_msg = "; ".join(v.message for v in env_result.violations[:3])
+                    return json.dumps({
+                        "jsonrpc": "2.0",
+                        "id": msg.get("id"),
+                        "error": {"code": -32600,
+                                  "message": f"BLOCKED by envelope ({env_result.decision.value}): {violation_msg}"}
+                    }).encode()
 
         elif msg.get("method") == "tools/list":
             # Forward, then filter response
@@ -215,9 +266,10 @@ class HttpProxy:
 
 async def run_http_proxy(host: str, port: int, target: str,
                          policy: Policy, audit: AuditLog,
-                         scanner: ResponseScanner | None = None) -> None:
+                         scanner: ResponseScanner | None = None,
+                         envelope_path: str | None = None) -> None:
     """Start the HTTP proxy server."""
-    proxy = HttpProxy(target, policy, audit, scanner)
+    proxy = HttpProxy(target, policy, audit, scanner, envelope_path)
 
     server = await asyncio.start_server(proxy.handle_request, host, port)
     addr = server.sockets[0].getsockname()
@@ -226,6 +278,8 @@ async def run_http_proxy(host: str, port: int, target: str,
     sys.stderr.write(f"mcpfw: policy '{policy.name}' ({len(policy.rules)} rules)\n")
     if scanner:
         sys.stderr.write(f"mcpfw: response scanning enabled\n")
+    if envelope_path:
+        sys.stderr.write(f"mcpfw: envelope enforcement enabled ({envelope_path})\n")
 
     async with server:
         await server.serve_forever()
