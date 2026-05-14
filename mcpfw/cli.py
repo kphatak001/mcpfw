@@ -12,6 +12,7 @@ from .policy import load_policy
 from .audit import AuditLog
 from .proxy import run_proxy
 from .http_proxy import run_http_proxy
+from .streamable_proxy import run_streamable_proxy
 from .rules.response_scanner import ResponseScanner
 
 
@@ -26,6 +27,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--dry-run", action="store_true", help="Log decisions but don't enforce")
     ap.add_argument("--listen", help="HTTP proxy mode: bind address (e.g. :8443, 127.0.0.1:8443)")
     ap.add_argument("--target", help="HTTP proxy mode: upstream MCP server URL")
+    ap.add_argument("--transport", default="http", choices=["http", "streamable"],
+                    help="Transport mode: http (simple POST) or streamable (MCP Streamable HTTP with SSE)")
     ap.add_argument("--envelope", "-e", help="Path to agent-envelope YAML (enables session-level enforcement)")
     ap.add_argument("command", nargs=argparse.REMAINDER, help="MCP server command (stdio mode)")
 
@@ -44,7 +47,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.listen:
         if not args.target:
             ap.error("--target is required when using --listen (HTTP proxy mode)")
-        return _run_http_mode(args.listen, args.target, policy, audit, scanner, args.envelope)
+        return _run_http_mode(args.listen, args.target, policy, audit, scanner, args.envelope, args.transport)
     else:
         cmd = args.command
         if cmd and cmd[0] == "--":
@@ -54,11 +57,14 @@ def main(argv: list[str] | None = None) -> int:
         return _run_stdio_mode(cmd, policy, audit, scanner)
 
 
-def _run_http_mode(listen: str, target: str, policy, audit, scanner, envelope_path: str | None) -> int:
+def _run_http_mode(listen: str, target: str, policy, audit, scanner, envelope_path: str | None, transport: str) -> int:
     host, port = _parse_listen(listen)
-    sys.stderr.write(f"mcpfw: starting HTTP proxy mode\n")
+    sys.stderr.write(f"mcpfw: starting {transport} proxy mode\n")
     try:
-        asyncio.run(run_http_proxy(host, port, target, policy, audit, scanner, envelope_path))
+        if transport == "streamable":
+            asyncio.run(run_streamable_proxy(host, port, target, policy, audit, scanner, envelope_path))
+        else:
+            asyncio.run(run_http_proxy(host, port, target, policy, audit, scanner, envelope_path))
     except KeyboardInterrupt:
         pass
     finally:
