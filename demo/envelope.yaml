@@ -1,0 +1,22 @@
+name: support-agent-demo
+purpose: "Answer customer questions. Never export data externally."
+
+bounds:
+  max_actions_per_session: 10
+  max_tokens_consumed: 50000
+  max_duration_seconds: 60
+  max_cost_usd: 1.00
+
+  data_flow:
+    forbidden_flows:
+      - from: "customer_account"
+        to: ["email_external", "api_external", "file_export"]
+
+  autonomy:
+    max_chain_depth: 2
+
+drift:
+  unknown_workflow_threshold: 4
+  repetition:
+    max_identical_calls: 2
+    max_similar_calls: 5

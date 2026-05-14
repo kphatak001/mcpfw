@@ -1,0 +1,10 @@
+name: demo-permissive
+# Per-call policy: allow everything. The envelope handles session-level enforcement.
+# This demonstrates that per-call policy alone is insufficient.
+
+scan_responses:
+  enabled: true
+
+rules:
+  - action: allow
+    tools: ["*"]
