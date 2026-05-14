@@ -22,6 +22,7 @@ from .policy import Policy, Decision
 from .audit import AuditLog
 from .session import Session
 from .rules.response_scanner import ResponseScanner
+from .rules.rug_pull import RugPullDetector
 
 # Optional agent-envelope integration
 try:
@@ -43,6 +44,7 @@ class HttpProxy:
         self.sessions: dict[str, Session] = {}  # keyed by agent identity
         self.envelope_path = envelope_path
         self.envelope_sessions: dict[str, "EnvelopeSession"] = {}
+        self.rug_pull_detector = RugPullDetector()
 
     def _get_session(self, agent_id: str) -> Session:
         if agent_id not in self.sessions:
@@ -191,7 +193,7 @@ class HttpProxy:
         return response
 
     def _filter_discovery(self, original_msg: dict, resp_bytes: bytes) -> bytes:
-        """Strip denied tools from tools/list response."""
+        """Strip denied tools from tools/list response and check for rug pulls."""
         try:
             resp = json.loads(resp_bytes)
         except json.JSONDecodeError:
@@ -200,6 +202,26 @@ class HttpProxy:
         tools = resp.get("result", {}).get("tools") if isinstance(resp.get("result"), dict) else None
         if not isinstance(tools, list):
             return resp_bytes
+
+        # Rug-pull detection: check if tool descriptions changed since first seen
+        alerts = self.rug_pull_detector.register_tools(tools)
+        if alerts:
+            for alert in alerts:
+                self.audit.log_event("rug_pull_detected", {
+                    "tool": alert.tool_name,
+                    "field": alert.field_changed,
+                    "old_hash": alert.old_hash,
+                    "new_hash": alert.new_hash,
+                })
+            # Block the response — tool descriptions have been tampered with
+            return json.dumps({
+                "jsonrpc": "2.0",
+                "id": original_msg.get("id"),
+                "error": {"code": -32600,
+                          "message": f"BLOCKED by mcpfw: rug-pull detected. "
+                                     f"{len(alerts)} tool(s) changed descriptions since registration: "
+                                     f"{', '.join(a.tool_name for a in alerts)}"}
+            }).encode()
 
         visible, hidden = self.policy.filter_tools(tools)
         if hidden:

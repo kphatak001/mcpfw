@@ -51,6 +51,9 @@ class AuditLog:
         if method:  # only log methods, not responses
             self._write({"event": "passthrough", "method": method})
 
+    def log_event(self, event_type: str, data: dict) -> None:
+        self._write({"event": event_type, **data})
+
     def _write(self, entry: dict) -> None:
         entry["timestamp"] = time.time()
         entry["iso_time"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
