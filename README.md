@@ -21,6 +21,14 @@ Agent ──HTTP──▶ mcpfw (proxy :8443) ──HTTP──▶ MCP Server
 pip install mcpfw
 ```
 
+## Demo
+
+![Agent Firewall Demo](demo/demo.gif)
+
+*Normal calls pass. Multi-step exfiltration gets killed. Per-call policy allows every individual action. The session-level envelope catches the trajectory.*
+
+Run it yourself: `bash demo/run_demo.sh` (or `bash demo/start_firewall.sh` for persistent mode)
+
 ## Usage
 
 ### Stdio mode (local MCP servers)
