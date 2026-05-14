@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.3.0 (2026-05-14)
+
+### Rug-Pull Detection + Streamable HTTP Transport
+
+**Rug-pull detection:**
+- Caches tool descriptors on first `tools/list` response
+- Alerts and blocks when descriptions or schemas change after registration
+- Catches the postmark-mcp attack pattern (build trust, then modify)
+- 6 new tests
+
+**Streamable HTTP transport (`--transport streamable`):**
+- Supports the MCP spec 2025-03-26 remote transport standard
+- Handles both single JSON responses and SSE streaming
+- Per-event inspection in SSE streams (injection scanning on each event)
+- `Mcp-Session-Id` header tracking for session continuity
+- Works with real MCP clients (Claude Code, Kiro, Cursor)
+
+**Other:**
+- `audit.log_event()` generic event logging method
+
+**Tests:** 66 total (6 new), all passing.
+
 ## 0.2.0 (2026-05-14)
 
 ### HTTP Proxy Mode + Envelope Integration
