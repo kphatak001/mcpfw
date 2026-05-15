@@ -70,6 +70,12 @@ class MCPHandler(BaseHTTPRequestHandler):
             print(f"  💬 REPLY: {args.get('message', '')[:80]}...")
             return {"content": [{"type": "text", "text": "Reply sent to customer"}]}
 
+        elif tool == "human_approval":
+            return {"content": [{"type": "text", "text": f"Approval recorded from {args.get('approved_by', 'unknown')}"}]}
+
+        elif tool.startswith("payment_"):
+            return {"content": [{"type": "text", "text": "Payment processed"}]}
+
         return {"content": [{"type": "text", "text": f"Unknown tool: {tool}"}]}
 
     def log_message(self, format, *args):

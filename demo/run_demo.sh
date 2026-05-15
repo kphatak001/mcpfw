@@ -13,6 +13,11 @@ DEMO_DIR="$(pwd)"
 MCPFW_DIR="$(dirname "$DEMO_DIR")"
 ENVELOPE_DIR="$HOME/projects/agent-envelope"
 
+# Kill any existing processes on our ports
+lsof -ti :9000 2>/dev/null | xargs kill 2>/dev/null || true
+lsof -ti :8443 2>/dev/null | xargs kill 2>/dev/null || true
+sleep 0.3
+
 echo "╔══════════════════════════════════════════════════════════════╗"
 echo "║          AGENT FIREWALL DEMO: Exfiltration Detection        ║"
 echo "╠══════════════════════════════════════════════════════════════╣"
@@ -63,12 +68,12 @@ echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 
-# Temporal preconditions demo (requires temporal policy)
+# Temporal preconditions demo (policy-only, no envelope)
 echo "Stopping proxy for temporal demo..."
 kill $PROXY_PID 2>/dev/null || true
 sleep 0.5
 
-echo "Restarting mcpfw with temporal policy..."
+echo "Restarting mcpfw with temporal policy (no envelope)..."
 PYTHONPATH="$MCPFW_DIR:$ENVELOPE_DIR:$PYTHONPATH" python3 -m mcpfw.cli \
     --listen :8443 \
     --target http://127.0.0.1:9000 \

@@ -182,8 +182,14 @@ class HttpProxy:
         writer.write(request)
         await writer.drain()
 
-        # Read response
-        response = await reader.read(1024 * 1024)  # 1MB max
+        # Read response (wait for full response until connection closes)
+        chunks = []
+        while True:
+            chunk = await reader.read(65536)
+            if not chunk:
+                break
+            chunks.append(chunk)
+        response = b"".join(chunks)
         writer.close()
 
         # Extract body from HTTP response
