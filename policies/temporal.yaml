@@ -1,0 +1,32 @@
+name: temporal-demo
+# Demonstrates temporal preconditions — the feature AgentCore Gateway has
+# that no other open-source tool provides.
+
+rules:
+  # Payment actions require human approval within the last 30 minutes
+  - name: payment_requires_approval
+    action: requires
+    tools: ["payment_*", "refund_*", "transfer_*"]
+    requires_event: "human_approval"
+    within: "30m"
+    message: "Payment actions require human approval within the last 30 minutes"
+
+  # Cannot delete resources within 5 minutes of creation (prevent accidental teardown)
+  - name: no_rapid_delete
+    action: requires
+    tools: ["delete_*", "destroy_*"]
+    requires_event: "create_*"
+    cooldown: "5m"
+    message: "Cannot delete within 5 minutes of creation"
+
+  # Admin tools only allowed during maintenance window (requires maintenance_start event)
+  - name: admin_requires_maintenance
+    action: requires
+    tools: ["admin_*"]
+    requires_event: "maintenance_start"
+    within: "2h"
+    message: "Admin tools only available during active maintenance window"
+
+  # Allow everything else
+  - action: allow
+    tools: ["*"]

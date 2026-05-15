@@ -3,6 +3,7 @@
 from __future__ import annotations
 import fnmatch
 import re
+import time
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -20,7 +21,7 @@ class Decision:
 
 @dataclass
 class Rule:
-    action: str  # allow, deny, ask, rate_limit, budget, sequence
+    action: str  # allow, deny, ask, rate_limit, budget, sequence, requires
     tools: list[str] = field(default_factory=lambda: ["*"])
     when: dict = field(default_factory=dict)
     message: str = ""
@@ -31,6 +32,10 @@ class Rule:
     max_per_tool: int = 0
     # sequence fields
     pattern: list[str] = field(default_factory=list)
+    # temporal precondition fields
+    requires_event: str = ""  # tool pattern that must have occurred
+    within_seconds: float = 0  # time window for the required event
+    cooldown_seconds: float = 0  # min time since a specific event before this is allowed
 
 
 @dataclass
@@ -70,6 +75,12 @@ class Policy:
 
             if rule.action == "sequence":
                 result = _check_sequence(rule, tool_name, arguments, session)
+                if result:
+                    return result
+                continue
+
+            if rule.action == "requires":
+                result = _check_requires(rule, tool_name, arguments, session)
                 if result:
                     return result
                 continue
@@ -131,6 +142,56 @@ def _check_sequence(rule: Rule, current_tool: str, current_args: dict, session) 
     return None
 
 
+def _check_requires(rule: Rule, current_tool: str, current_args: dict, session) -> Decision | None:
+    """Enforce temporal preconditions: tool X requires event Y within Z seconds."""
+    if session is None:
+        return None
+    if not _tool_matches(current_tool, rule.tools):
+        return None
+    if rule.when and not _when_matches(current_args, rule.when):
+        return None
+
+    now = time.time()
+
+    # requires_event: block unless a matching event occurred within the time window
+    if rule.requires_event and rule.within_seconds:
+        cutoff = now - rule.within_seconds
+        found = any(
+            fnmatch.fnmatch(r.tool, rule.requires_event) and r.timestamp > cutoff
+            for r in session.history
+        )
+        if not found:
+            window_desc = _format_duration(rule.within_seconds)
+            return Decision(
+                "deny", rule.name,
+                rule.message or f"Requires '{rule.requires_event}' within last {window_desc}"
+            )
+
+    # cooldown_seconds: block if a matching event occurred too recently
+    if rule.cooldown_seconds and rule.requires_event:
+        cutoff = now - rule.cooldown_seconds
+        too_recent = any(
+            fnmatch.fnmatch(r.tool, rule.requires_event) and r.timestamp > cutoff
+            for r in session.history
+        )
+        if too_recent:
+            window_desc = _format_duration(rule.cooldown_seconds)
+            return Decision(
+                "deny", rule.name,
+                rule.message or f"Cooldown: must wait {window_desc} after '{rule.requires_event}'"
+            )
+
+    return None
+
+
+def _format_duration(seconds: float) -> str:
+    if seconds >= 3600:
+        return f"{seconds / 3600:.0f}h"
+    if seconds >= 60:
+        return f"{seconds / 60:.0f}m"
+    return f"{seconds:.0f}s"
+
+
 def _step_matches(tool: str, arg_hint: str, step: str) -> bool:
     """Match a sequence step like 'read_file:*.env*' or just 'run_command'."""
     if ":" in step:
@@ -144,6 +205,25 @@ def _first_arg_value(arguments: dict) -> str:
     if not arguments:
         return ""
     return str(next(iter(arguments.values()), ""))
+
+
+def _parse_duration(spec: str) -> float:
+    """Parse duration strings like '30m', '2h', '300s', '1h30m' into seconds."""
+    if not spec:
+        return 0
+    if isinstance(spec, (int, float)):
+        return float(spec)
+    total = 0
+    import re as _re
+    for match in _re.finditer(r'(\d+(?:\.\d+)?)\s*([smh]?)', str(spec)):
+        val, unit = float(match.group(1)), match.group(2)
+        if unit == 'h':
+            total += val * 3600
+        elif unit == 'm':
+            total += val * 60
+        else:
+            total += val
+    return total or float(spec) if spec.replace('.', '').isdigit() else total
 
 
 def load_policy(path: str) -> Policy:
@@ -162,6 +242,9 @@ def load_policy(path: str) -> Policy:
             max_calls=rd.get("max_calls", 0),
             max_per_tool=rd.get("max_per_tool", 0),
             pattern=rd.get("pattern", []),
+            requires_event=rd.get("requires_event", ""),
+            within_seconds=_parse_duration(rd.get("within", "")),
+            cooldown_seconds=_parse_duration(rd.get("cooldown", "")),
         ))
 
     return Policy(

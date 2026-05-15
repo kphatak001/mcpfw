@@ -261,6 +261,36 @@ Steps use `tool_name:arg_glob` syntax. The engine walks session history backward
 
 Based on: [Taming Privilege Escalation in LLM Agent Systems](https://arxiv.org/abs/2604.xxxxx), [AgentGuardian: Learning Access Control Policies](https://arxiv.org/abs/2604.xxxxx)
 
+## Temporal Preconditions
+
+Enforce time-based rules: "this action is only allowed if a different action happened first, within a time window." This is the stateful enforcement layer that no other open-source tool provides.
+
+**Requires prior event:**
+```yaml
+# Payment tools require human approval within the last 30 minutes
+- name: payment_gate
+  action: requires
+  tools: ["payment_*", "refund_*"]
+  requires_event: "human_approval"
+  within: "30m"
+  message: "Payment requires human approval within last 30 minutes"
+```
+
+**Cooldown (minimum time between events):**
+```yaml
+# Cannot delete a resource within 5 minutes of creating it
+- name: no_rapid_delete
+  action: requires
+  tools: ["delete_*"]
+  requires_event: "create_*"
+  cooldown: "5m"
+  message: "Cannot delete within 5 minutes of creation"
+```
+
+Duration formats: `30m`, `2h`, `300s`, `1h30m`. Glob patterns work on both tool names and event names.
+
+See `policies/temporal.yaml` for a complete example with payment gates, rapid-delete prevention, and maintenance windows.
+
 ## Bundled Policies
 
 | Policy | Description |
@@ -268,6 +298,7 @@ Based on: [Taming Privilege Escalation in LLM Agent Systems](https://arxiv.org/a
 | `permissive.yaml` | Log everything, block nothing |
 | `standard.yaml` | Block sensitive paths, allow reads, ask for unscoped writes, session budgets, exfiltration detection, response scanning |
 | `paranoid.yaml` | Ask for everything except reads, tight budgets, aggressive sequence detection, response scanning |
+| `temporal.yaml` | Payment gates, rapid-delete prevention, maintenance windows (temporal preconditions demo) |
 
 ## Demo
 

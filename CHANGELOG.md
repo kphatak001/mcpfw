@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.4.0 (2026-05-15)
+
+### Temporal Preconditions
+
+**New rule action: `requires`**
+- Enforce that a prior event must have occurred within a time window before a tool call is allowed
+- `requires_event` + `within`: "payment_api requires human_approval within last 30m"
+- `cooldown_seconds`: "cannot delete_account within 5m of create_account"
+- Glob pattern matching on event names (e.g., `auth_*` matches `auth_mfa`)
+- Human-readable duration parsing: `30m`, `2h`, `300s`, `1h30m`
+- Closes the biggest gap vs AgentCore Gateway's Layer 2 temporal policies
+
+**New policy file:** `policies/temporal.yaml` (payment gate, rapid-delete prevention, maintenance window)
+
+**Tests:** 80 total (14 new), all passing.
+
 ## 0.3.0 (2026-05-14)
 
 ### Rug-Pull Detection + Streamable HTTP Transport
