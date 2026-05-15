@@ -1,0 +1,24 @@
+name: team-support
+# Support team policy. Layered on top of org-baseline.
+
+rules:
+  # Team: allow KB and customer reads
+  - name: team_allow_reads
+    action: allow
+    tools: ["search_kb", "read_customer", "read_order"]
+
+  # Team: rate limit external calls
+  - name: team_rate_external
+    action: rate_limit
+    tools: ["send_email", "send_sms"]
+    rate: 10/minute
+
+  # Team: allow replies
+  - name: team_allow_reply
+    action: allow
+    tools: ["send_reply"]
+
+  # Team: ask for everything else
+  - action: ask
+    tools: ["*"]
+    message: "[TEAM] Unrecognized tool requires approval"

@@ -8,7 +8,7 @@ import argparse
 import asyncio
 import sys
 
-from .policy import load_policy
+from .policy import load_policy, load_composed_policy
 from .audit import AuditLog
 from .proxy import run_proxy
 from .http_proxy import run_http_proxy
@@ -22,7 +22,8 @@ def main(argv: list[str] | None = None) -> int:
         description="MCP Firewall — transparent policy enforcement proxy for MCP servers",
         usage="mcpfw [options] -- <mcp-server-command>\n       mcpfw --listen :8443 --target https://server:3000 --policy policy.yaml",
     )
-    ap.add_argument("--policy", "-p", required=True, help="Path to policy YAML file")
+    ap.add_argument("--policy", "-p", action="append", required=True,
+                    help="Path to policy YAML file (can specify multiple, first = highest priority)")
     ap.add_argument("--audit-log", "-l", help="Path to audit log file (JSON-lines)")
     ap.add_argument("--dry-run", action="store_true", help="Log decisions but don't enforce")
     ap.add_argument("--listen", help="HTTP proxy mode: bind address (e.g. :8443, 127.0.0.1:8443)")
@@ -34,7 +35,7 @@ def main(argv: list[str] | None = None) -> int:
 
     args = ap.parse_args(argv)
 
-    policy = load_policy(args.policy)
+    policy = load_composed_policy(args.policy)
     audit = AuditLog(args.audit_log)
     scanner = _build_scanner(policy)
 

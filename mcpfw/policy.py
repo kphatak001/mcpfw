@@ -226,6 +226,41 @@ def _parse_duration(spec: str) -> float:
     return total or float(spec) if spec.replace('.', '').isdigit() else total
 
 
+def load_composed_policy(paths: list[str]) -> Policy:
+    """Load and compose multiple policy files with precedence.
+
+    First path = highest priority. Deny rules from higher-priority policies
+    cannot be overridden by allow rules in lower-priority policies.
+
+    Composition rules:
+    - Rules are concatenated in order (highest priority first)
+    - scan_responses is merged (any layer enabling it wins)
+    - default_action uses the highest-priority policy's setting
+    - Name is joined with " + "
+    """
+    if len(paths) == 1:
+        return load_policy(paths[0])
+
+    policies = [load_policy(p) for p in paths]
+
+    merged_rules = []
+    for p in policies:
+        merged_rules.extend(p.rules)
+
+    merged_scan = {}
+    for p in policies:
+        if p.scan_responses.get("enabled"):
+            merged_scan = p.scan_responses
+            break
+
+    return Policy(
+        name=" + ".join(p.name for p in policies),
+        rules=merged_rules,
+        scan_responses=merged_scan,
+        default_action=policies[0].default_action,
+    )
+
+
 def load_policy(path: str) -> Policy:
     with open(path) as f:
         data = yaml.safe_load(f)

@@ -1,0 +1,27 @@
+name: org-baseline
+# Organization-wide security baseline. Cannot be overridden by team or project policies.
+
+rules:
+  # Org-wide: never allow writes to infrastructure paths
+  - name: org_block_infra
+    action: deny
+    tools: ["write_file", "edit_file"]
+    when:
+      arg_matches:
+        path: ["~/.ssh/**", "~/.aws/**", "/etc/**", "**/.env*"]
+    message: "[ORG] Write to infrastructure path blocked"
+
+  # Org-wide: payment requires approval
+  - name: org_payment_gate
+    action: requires
+    tools: ["payment_*", "refund_*"]
+    requires_event: "human_approval"
+    within: "30m"
+    message: "[ORG] Payment requires human approval within 30 minutes"
+
+  # Org-wide: session budget
+  - name: org_budget
+    action: budget
+    max_calls: 500
+    max_per_tool: 100
+    message: "[ORG] Session budget exceeded"
