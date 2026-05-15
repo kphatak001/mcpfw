@@ -62,6 +62,26 @@ attack_workflow('http://127.0.0.1:9000')
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
+
+# Temporal preconditions demo (requires temporal policy)
+echo "Stopping proxy for temporal demo..."
+kill $PROXY_PID 2>/dev/null || true
+sleep 0.5
+
+echo "Restarting mcpfw with temporal policy..."
+PYTHONPATH="$MCPFW_DIR:$ENVELOPE_DIR:$PYTHONPATH" python3 -m mcpfw.cli \
+    --listen :8443 \
+    --target http://127.0.0.1:9000 \
+    --policy "$MCPFW_DIR/policies/temporal.yaml" \
+    --audit-log "$DEMO_DIR/audit.jsonl" &
+PROXY_PID=$!
+sleep 1
+
+python3 "$DEMO_DIR/agent.py" http://127.0.0.1:8443 --temporal
+
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo ""
 echo "📋 Audit log: $DEMO_DIR/audit.jsonl"
 echo ""
 

@@ -91,9 +91,47 @@ def attack_workflow(endpoint: str):
     print("  (This is what happens WITHOUT the agent firewall)")
 
 
+def temporal_workflow(endpoint: str):
+    """Temporal preconditions: payment blocked without prior approval."""
+    print("\n" + "=" * 60)
+    print("🕐 TEMPORAL DEMO: Payment requires human approval within 30m")
+    print("=" * 60)
+
+    # Attempt payment WITHOUT prior approval
+    print("\n  --- Attempt 1: Payment without approval ---")
+    resp = call_tool(endpoint, "payment_submit", {"amount": 500, "to": "vendor"}, 200, agent_id="finance-agent")
+    error = resp.get("error")
+    if error:
+        print(f"  payment_submit → 🛑 BLOCKED: {error['message']}")
+    else:
+        print(f"  payment_submit → ✅ (unexpected)")
+
+    # Now simulate human approval
+    print("\n  --- Human approves (human_approval event) ---")
+    resp = call_tool(endpoint, "human_approval", {"approved_by": "kaustubh", "scope": "payment"}, 201, agent_id="finance-agent")
+    error = resp.get("error")
+    if error:
+        print(f"  human_approval → ❌ {error['message']}")
+    else:
+        print(f"  human_approval → ✅ Approval recorded")
+
+    # Retry payment AFTER approval
+    print("\n  --- Attempt 2: Payment after approval ---")
+    resp = call_tool(endpoint, "payment_submit", {"amount": 500, "to": "vendor"}, 202, agent_id="finance-agent")
+    error = resp.get("error")
+    if error:
+        print(f"  payment_submit → 🛑 BLOCKED: {error['message']}")
+    else:
+        print(f"  payment_submit → ✅ Payment processed")
+
+    print("\n  🕐 Temporal enforcement: same tool, different outcome based on session history.")
+
+
 if __name__ == "__main__":
     endpoint = sys.argv[1] if len(sys.argv) > 1 else "http://127.0.0.1:8443"
     print(f"🤖 Agent connecting to: {endpoint}")
 
     normal_workflow(endpoint)
     attack_workflow(endpoint)
+    if "--temporal" in sys.argv:
+        temporal_workflow(endpoint)
