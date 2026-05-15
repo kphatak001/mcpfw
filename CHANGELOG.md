@@ -12,9 +12,17 @@
 - Human-readable duration parsing: `30m`, `2h`, `300s`, `1h30m`
 - Closes the biggest gap vs AgentCore Gateway's Layer 2 temporal policies
 
-**New policy file:** `policies/temporal.yaml` (payment gate, rapid-delete prevention, maintenance window)
+### Policy Composition
 
-**Tests:** 80 total (14 new), all passing.
+**Multiple `--policy` flags with precedence:**
+- Layer policies: `--policy org.yaml --policy team.yaml --policy project.yaml`
+- First = highest priority. Deny at org level cannot be overridden by team allow.
+- Rules concatenated in priority order. scan_responses merged (any layer enabling wins).
+- Default action from highest-priority policy.
+
+**New bundled policies:** `org-baseline.yaml`, `team-support.yaml`
+
+**Tests:** 89 total (21 new), all passing.
 
 ## 0.3.0 (2026-05-14)
 

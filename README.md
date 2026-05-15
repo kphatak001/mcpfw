@@ -299,6 +299,22 @@ See `policies/temporal.yaml` for a complete example with payment gates, rapid-de
 | `standard.yaml` | Block sensitive paths, allow reads, ask for unscoped writes, session budgets, exfiltration detection, response scanning |
 | `paranoid.yaml` | Ask for everything except reads, tight budgets, aggressive sequence detection, response scanning |
 | `temporal.yaml` | Payment gates, rapid-delete prevention, maintenance windows (temporal preconditions demo) |
+| `org-baseline.yaml` | Organization-wide baseline: infra path deny, payment gate, session budget |
+| `team-support.yaml` | Support team layer: KB reads, rate-limited email, ask-default |
+
+## Policy Composition
+
+Layer multiple policy files with precedence. Deny at a higher layer cannot be overridden by allow at a lower layer.
+
+```bash
+mcpfw --policy policies/org-baseline.yaml \
+      --policy policies/team-support.yaml \
+      --listen :8443 --target http://mcp-server:3000
+```
+
+First `--policy` = highest priority. Rules are evaluated in order: org rules first, then team rules. If the org denies a tool call, the team's allow never fires.
+
+This mirrors Cedar's hierarchical forbid semantics without requiring a new policy language.
 
 ## Demo
 
