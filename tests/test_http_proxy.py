@@ -4,7 +4,7 @@ import asyncio
 import json
 import pytest
 
-from mcpfw.http_proxy import HttpProxy, run_http_proxy
+from mcpfw.http_proxy import HttpProxy, run_http_proxy, HAS_ENVELOPE
 from mcpfw.policy import load_policy
 from mcpfw.audit import AuditLog
 
@@ -81,6 +81,7 @@ def test_parse_listen():
     assert _parse_listen("8443") == ("0.0.0.0", 8443)
 
 
+@pytest.mark.skipif(not HAS_ENVELOPE, reason="agent-envelope not installed")
 def test_envelope_blocks_on_data_flow(audit, tmp_path):
     """Envelope catches cross-action data flow that per-call policy allows."""
     from mcpfw.policy import load_policy
